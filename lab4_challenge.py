@@ -17,7 +17,6 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.mac_to_port = {}
         self.datapaths = {}
         self.monitor_thread = hub.spawn(self._monitor)
-        self.h1_total_packets = 0
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -155,8 +154,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         while True:
             for dp in self.datapaths.values():
                 self._request_stats(dp)
-
-            hub.sleep(0.01)
+            hub.sleep(1)
 
     def _request_stats(self, datapath):
         self.logger.debug('send stats request: %016x', datapath.id)
@@ -173,25 +171,15 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
     def _flow_stats_reply_handler(self, ev):
         body = ev.msg.body
 
-        # Store the initial packet count
-        initial_h1_packet_count = self.h1_total_packets
-
-        # Iterate through the flow stats
+        self.logger.info('IPv4 FROM       IPv4 TO       packet_count')
+        self.logger.info('-------------- -------------- -------------')
         for stat in sorted([flow for flow in body if flow.priority == 1],
                            key=lambda flow: (flow.match.get('ipv4_src', 'N/A'),
                                              flow.match.get('ipv4_dst', 'N/A'))):
             ipv4_src = stat.match.get('ipv4_src', 'N/A')
             ipv4_dst = stat.match.get('ipv4_dst', 'N/A')
             packet_count = stat.packet_count
-
-            # Check if it's related to h1
-            if ipv4_src == '10.0.1.1' or ipv4_dst == '10.0.1.1':
-                # Check if there's an increase in the packet count
-                if packet_count > initial_h1_packet_count:
-                    increase = packet_count - initial_h1_packet_count
-                    self.h1_total_packets = packet_count  # Update the total count
-                    self.logger.info('Total Packets To & From 10.0.1.1 increased by %d: %d', increase,
-                                     self.h1_total_packets)
+            self.logger.info('%-14s %-14s %d', ipv4_src, ipv4_dst, packet_count)
 
     '''
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
