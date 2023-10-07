@@ -24,40 +24,40 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        # IPv4 addresses of h2 and h3
-        h2_ipv4 = '10.0.2.1'
-        h3_ipv4 = '10.0.3.1'
+        # List of IPv4 addresses to track
+        ipv4_addresses = ['10.0.1.1', '10.0.2.1', '10.0.3.1']
 
-        # Drop traffic from h2 to h3
-        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,
-                                ipv4_src=h2_ipv4, ipv4_dst=h3_ipv4)
+        # Create flows to track traffic for each combination of source and destination
+        for src_ip in ipv4_addresses:
+            for dst_ip in ipv4_addresses:
+                if src_ip != dst_ip:
+                    # Create flow to track incoming packets
+                    match_incoming = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_dst=src_ip)
+                    out_port = ofproto.OFPP_CONTROLLER
+                    actions = [parser.OFPActionOutput(out_port)]
+                    instruction = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+                    msg = parser.OFPFlowMod(
+                        datapath=datapath,
+                        priority=1,
+                        match=match_incoming,
+                        instructions=instruction
+                    )
+                    self.logger.info(f"Tracking Incoming Packets to {src_ip}")
+                    datapath.send_msg(msg)
 
-        instruction = [
-            parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])
-        ]
-        msg = parser.OFPFlowMod(
-            datapath=datapath,
-            priority=1,
-            match=match,
-            instructions=instruction
-        )
-        self.logger.info("dropIPv4Traffic (h2 to h3): %s" % str(msg))
-        datapath.send_msg(msg)
-
-        # Drop traffic from h3 to h2
-        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,
-                                ipv4_src=h3_ipv4, ipv4_dst=h2_ipv4)
-        instruction = [
-            parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])
-        ]
-        msg = parser.OFPFlowMod(
-            datapath=datapath,
-            priority=1,
-            match=match,
-            instructions=instruction
-        )
-        self.logger.info("dropIPv4Traffic (h3 to h2): %s" % str(msg))
-        datapath.send_msg(msg)
+                    # Create flow to track outgoing packets
+                    match_outgoing = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src_ip)
+                    out_port = ofproto.OFPP_CONTROLLER
+                    actions = [parser.OFPActionOutput(out_port)]
+                    instruction = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+                    msg = parser.OFPFlowMod(
+                        datapath=datapath,
+                        priority=1,
+                        match=match_outgoing,
+                        instructions=instruction
+                    )
+                    self.logger.info(f"Tracking Outgoing Packets from {src_ip}")
+                    datapath.send_msg(msg)
 
         # Add a default flow entry to send unmatched packets to the controller
         match = parser.OFPMatch()
@@ -154,7 +154,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         while True:
             for dp in self.datapaths.values():
                 self._request_stats(dp)
-            hub.sleep(10)
+            hub.sleep(1)
 
     def _request_stats(self, datapath):
         self.logger.debug('send stats request: %016x', datapath.id)
@@ -171,33 +171,30 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
     def _flow_stats_reply_handler(self, ev):
         body = ev.msg.body
 
-        self.logger.info('datapath         '
-                         'in-port  eth-dst           '
-                         'out-port packets  bytes')
-        self.logger.info('---------------- '
-                         '-------- ----------------- '
-                         '-------- -------- --------')
+        self.logger.info('IPv4 src       IPv4 dst       packet_count')
+        self.logger.info('-------------- -------------- -------------')
         for stat in sorted([flow for flow in body if flow.priority == 1],
-                           key=lambda flow: (flow.match['in_port'],
-                                             flow.match['eth_dst'])):
-            self.logger.info('%016x %8x %17s %8x %8d %8d',
-                             ev.msg.datapath.id,
-                             stat.match['in_port'], stat.match['eth_dst'],
-                             stat.instructions[0].actions[0].port,
-                             stat.packet_count, stat.byte_count)
+                           key=lambda flow: (flow.match.get('ipv4_src', 'N/A'),
+                                             flow.match.get('ipv4_dst', 'N/A'))):
+            ipv4_src = stat.match.get('ipv4_src', 'N/A')
+            ipv4_dst = stat.match.get('ipv4_dst', 'N/A')
+            packet_count = stat.packet_count
+            self.logger.info('%-14s %-14s %d', ipv4_src, ipv4_dst, packet_count)
 
+    '''
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def _port_stats_reply_handler(self, ev):
         body = ev.msg.body
 
-        self.logger.info('datapath         port     '
-                         'rx-pkts  rx-bytes rx-error '
-                         'tx-pkts  tx-bytes tx-error')
+        self.logger.info('datapath port '
+                     'rx-pkts rx-bytes rx-error '
+                     'tx-pkts tx-bytes tx-error')
         self.logger.info('---------------- -------- '
-                         '-------- -------- -------- '
-                         '-------- -------- --------')
+                     '-------- -------- -------- '
+                     '-------- -------- --------')
         for stat in sorted(body, key=attrgetter('port_no')):
             self.logger.info('%016x %8x %8d %8d %8d %8d %8d %8d',
-                             ev.msg.datapath.id, stat.port_no,
-                             stat.rx_packets, stat.rx_bytes, stat.rx_errors,
-                             stat.tx_packets, stat.tx_bytes, stat.tx_errors)
+                         ev.msg.datapath.id, stat.port_no,
+                         stat.rx_packets, stat.rx_bytes, stat.rx_errors,
+                         stat.tx_packets, stat.tx_bytes, stat.tx_errors)
+    '''
