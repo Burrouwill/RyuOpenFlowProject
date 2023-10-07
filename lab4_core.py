@@ -39,7 +39,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                                 match=match,
                                 instructions=instruction
                                 )
-        self.logger.info("dropIPv4Traffic (h2 to h3): %s" % str(msg))
+        self.logger.info("dropIPv4Traffic h2 (10.0.2.1) --> h3 (10.0.3.1)")
         datapath.send_msg(msg)
 
         # Drop traffic from h3 to h2
@@ -54,7 +54,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                                 match=match,
                                 instructions=instruction
                                 )
-        self.logger.info("dropIPv4Traffic (h3 to h2): %s" % str(msg))
+        self.logger.info("dropIPv4Traffic h3 (10.0.3.1) --> h2 (10.0.2.1)")
         datapath.send_msg(msg)
 
 
@@ -104,7 +104,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port

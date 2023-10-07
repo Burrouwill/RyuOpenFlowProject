@@ -94,7 +94,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port) --> Used for Debugging / Demo
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -198,5 +198,3 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         if total_packets > (initial_h1_packets_in + initial_h1_packets_out):
             increase = total_packets - (initial_h1_packets_in + initial_h1_packets_out)
             self.logger.info('Total Packets To & From h1 increased by %d: %d', increase, total_packets)
-            self.logger.info('Outgoing Packets From h1: %d', self.h1_total_packets_out)
-            self.logger.info('Incoming Packets To h1: %d', self.h1_total_packets_in)
