@@ -1,0 +1,23 @@
+CORE COMPLETED
+
+Currently We have this:
+
+* Added 2 flows for each host, one for INCOMING packets, one for OUTGOING packets
+* Each flow redirects the packet to the controller 
+* The controller is currently annoucining this
+* The _flow_stats_reply_handler method is also constantly printing the tabele 
+* FOr the COMPLETION --> I need to make it so that only h1 infor is printed WHEN IT IS UPDATED (i.e. actually receiving packets) 
+* For 
+
+
+            if ipv4_src == h1_ipv4 or ipv4_dst == h1_ipv4:
+                
+                
+                self.h1_packet_count += 1
+                self.logger.info('Total Packets To & From 10.0.1.1: %d', self.h1_packet_count)
+
+
+
+* Idead for challenege:
+
+Monitor flows --> If packet count > MAX_PACKETS add a new flow with a higher priority that drops the packets 
