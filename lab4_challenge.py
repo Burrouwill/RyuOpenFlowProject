@@ -179,7 +179,6 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
                     self.h1_total_packets_out = packet_count  # Update the outgoing count
                     self.logger.info('Outgoing Packets From h1 increased by %d: %d', increase,
                                      self.h1_total_packets_out)
-
                 if packet_count < initial_h1_packets_out:
                     prev_packet_count = self.packetCounts[ipv4_src]
                     increase = packet_count - prev_packet_count
@@ -195,6 +194,13 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
                     self.h2_total_packets_out = packet_count  # Update the outgoing count
                     self.logger.info('Outgoing Packets From h2 increased by %d: %d', increase,
                                      self.h2_total_packets_out)
+                if packet_count < initial_h2_packets_out:
+                    prev_packet_count = self.packetCounts[ipv4_src]
+                    increase = packet_count - prev_packet_count
+                    if increase > 0:
+                        self.h2_total_packets_out += 1
+                        self.logger.info('Outgoing Packets From h2 increased by 1: %d', self.h2_total_packets_out)
+                        self.packetCounts[ipv4_src] = packet_count
 
             if ipv4_src == '10.0.3.1':
                 # Check if there's an increase in the outgoing packet count
@@ -203,3 +209,10 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
                     self.h3_total_packets_out = packet_count  # Update the outgoing count
                     self.logger.info('Outgoing Packets From h3 increased by %d: %d', increase,
                                      self.h3_total_packets_out)
+                if packet_count < initial_h3_packets_out:
+                    prev_packet_count = self.packetCounts[ipv4_src]
+                    increase = packet_count - prev_packet_count
+                    if increase > 0:
+                        self.h3_total_packets_out += 1
+                        self.logger.info('Outgoing Packets From h3 increased by 1: %d', self.h3_total_packets_out)
+                        self.packetCounts[ipv4_src] = packet_count
