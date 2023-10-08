@@ -1,4 +1,3 @@
-from operator import attrgetter
 
 from ryu.app import simple_switch_13
 from ryu.controller import ofp_event
@@ -19,6 +18,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.monitor_thread = hub.spawn(self._monitor)
         self.h1_total_packets_out = 0
         self.h1_total_packets_in = 0
+
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):

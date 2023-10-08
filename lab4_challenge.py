@@ -17,6 +17,10 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.mac_to_port = {}
         self.datapaths = {}
         self.monitor_thread = hub.spawn(self._monitor)
+        self.h1_total_packets_out = 0
+        self.h2_total_packets_out = 0
+        self.h3_total_packets_out = 0
+        self.packetCounts = {'10.0.1.1': 0, '10.0.2.1': 0, '10.0.3.1': 0}
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -31,32 +35,19 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         for src_ip in ipv4_addresses:
             for dst_ip in ipv4_addresses:
                 if src_ip != dst_ip:
-                    # Create flow to track incoming packets
-                    match_incoming = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_dst=src_ip)
+                    # Create a bidirectional flow to track traffic for a specific IP address pair
+                    match_bidirectional = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src_ip,
+                                                          ipv4_dst=dst_ip)
                     out_port = ofproto.OFPP_CONTROLLER
                     actions = [parser.OFPActionOutput(out_port)]
                     instruction = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
                     msg = parser.OFPFlowMod(
                         datapath=datapath,
                         priority=1,
-                        match=match_incoming,
+                        match=match_bidirectional,
                         instructions=instruction
                     )
-                    self.logger.info(f"Tracking Incoming Packets to {src_ip}")
-                    datapath.send_msg(msg)
-
-                    # Create flow to track outgoing packets
-                    match_outgoing = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src_ip)
-                    out_port = ofproto.OFPP_CONTROLLER
-                    actions = [parser.OFPActionOutput(out_port)]
-                    instruction = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-                    msg = parser.OFPFlowMod(
-                        datapath=datapath,
-                        priority=1,
-                        match=match_outgoing,
-                        instructions=instruction
-                    )
-                    self.logger.info(f"Tracking Outgoing Packets from {src_ip}")
+                    self.logger.info(f"Tracking Bidirectional Packets between {src_ip} and {dst_ip}")
                     datapath.send_msg(msg)
 
         # Add a default flow entry to send unmatched packets to the controller
@@ -105,7 +96,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        # self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -134,8 +125,6 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
-
-
 
     @set_ev_cls(ofp_event.EventOFPStateChange,
                 [MAIN_DISPATCHER, DEAD_DISPATCHER])
@@ -171,30 +160,46 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
     def _flow_stats_reply_handler(self, ev):
         body = ev.msg.body
 
-        self.logger.info('IPv4 FROM       IPv4 TO       packet_count')
-        self.logger.info('-------------- -------------- -------------')
-        for stat in sorted([flow for flow in body if flow.priority == 1],
-                           key=lambda flow: (flow.match.get('ipv4_src', 'N/A'),
-                                             flow.match.get('ipv4_dst', 'N/A'))):
+        # Store the initial packet counts
+        initial_h1_packets_out = self.h1_total_packets_out
+        initial_h2_packets_out = self.h2_total_packets_out
+        initial_h3_packets_out = self.h3_total_packets_out
+
+        # Iterate through all the flow stats
+        for stat in sorted(body,
+                           key=lambda flow: (flow.match.get('ipv4_src', 'N/A'), flow.match.get('ipv4_dst', 'N/A'))):
             ipv4_src = stat.match.get('ipv4_src', 'N/A')
-            ipv4_dst = stat.match.get('ipv4_dst', 'N/A')
             packet_count = stat.packet_count
-            self.logger.info('%-14s %-14s %d', ipv4_src, ipv4_dst, packet_count)
 
-    '''
-    @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
-    def _port_stats_reply_handler(self, ev):
-        body = ev.msg.body
 
-        self.logger.info('datapath port '
-                     'rx-pkts rx-bytes rx-error '
-                     'tx-pkts tx-bytes tx-error')
-        self.logger.info('---------------- -------- '
-                     '-------- -------- -------- '
-                     '-------- -------- --------')
-        for stat in sorted(body, key=attrgetter('port_no')):
-            self.logger.info('%016x %8x %8d %8d %8d %8d %8d %8d',
-                         ev.msg.datapath.id, stat.port_no,
-                         stat.rx_packets, stat.rx_bytes, stat.rx_errors,
-                         stat.tx_packets, stat.tx_bytes, stat.tx_errors)
-    '''
+            if ipv4_src == '10.0.1.1':
+                # Check if there's an increase in the outgoing packet count
+                if packet_count > initial_h1_packets_out:
+                    increase = packet_count - initial_h1_packets_out
+                    self.h1_total_packets_out = packet_count  # Update the outgoing count
+                    self.logger.info('Outgoing Packets From h1 increased by %d: %d', increase,
+                                     self.h1_total_packets_out)
+
+                if packet_count < initial_h1_packets_out:
+                    prev_packet_count = self.packetCounts[ipv4_src]
+                    increase = packet_count - prev_packet_count
+                    if increase > 0:
+                        self.h1_total_packets_out += 1
+                        self.logger.info('Outgoing Packets From h1 increased by 1: %d', self.h1_total_packets_out)
+                        self.packetCounts[ipv4_src] = packet_count
+
+            if ipv4_src == '10.0.2.1':
+                # Check if there's an increase in the outgoing packet count
+                if packet_count > initial_h2_packets_out:
+                    increase = packet_count - initial_h2_packets_out
+                    self.h2_total_packets_out = packet_count  # Update the outgoing count
+                    self.logger.info('Outgoing Packets From h2 increased by %d: %d', increase,
+                                     self.h2_total_packets_out)
+
+            if ipv4_src == '10.0.3.1':
+                # Check if there's an increase in the outgoing packet count
+                if packet_count > initial_h3_packets_out:
+                    increase = packet_count - initial_h3_packets_out
+                    self.h3_total_packets_out = packet_count  # Update the outgoing count
+                    self.logger.info('Outgoing Packets From h3 increased by %d: %d', increase,
+                                     self.h3_total_packets_out)

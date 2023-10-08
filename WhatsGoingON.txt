@@ -1,4 +1,4 @@
-CORE COMPLETED
+CORE COMPLETED?
 
 Currently We have this:
 
@@ -10,14 +10,13 @@ Currently We have this:
 * For 
 
 
-            if ipv4_src == h1_ipv4 or ipv4_dst == h1_ipv4:
-                
-                
-                self.h1_packet_count += 1
-                self.logger.info('Total Packets To & From 10.0.1.1: %d', self.h1_packet_count)
-
-
 
 * Idead for challenege:
+
+Switchg to using bidirectional flows For chal;lenge --> Get the stats, somehow for everything but only if diff in packet 
+Need fields for each stat / packet count 
+need a MAX var
+If total packet count > MAX --> We add a flow that drops the packets for that path with a higher priority 
+
 
 Monitor flows --> If packet count > MAX_PACKETS add a new flow with a higher priority that drops the packets 
