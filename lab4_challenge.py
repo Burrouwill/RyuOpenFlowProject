@@ -23,7 +23,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.h3_total_packets_out = 0
         self.packetCounts = {'10.0.1.1': 0, '10.0.2.1': 0, '10.0.3.1': 0}
         self.MAX_COUNT = 5
-        self.UNBLOCK_INTERVAL = 60
+        self.UNBLOCK_INTERVAL = 6
         self.blocked_hosts = {}
         self.all_host_packet_counts = { '10.0.1.1' : 'h1_total_packets_out', '10.0.2.1': 'h2_total_packets_out', '10.0.3.1': 'h3_total_packets_out'}
 
@@ -152,9 +152,8 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
             hub.sleep(1)
 
     def _block_handler(self, dp):
-        #Iterate through hosts -> Block those with packet count > MAX_COUNT
         self._block_hosts(dp)
-        #Unblock valid hosts
+        self._unblock_expired_hosts(dp)
 
     def _block_hosts(self, dp):
         for host_ip in self.all_host_packet_counts:
@@ -184,31 +183,43 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         dp.send_msg(msg)
 
 
-        # Reset the packet count too somewhere - This may cause problems
-
         # Store the unblock timestamp
         self.blocked_hosts[host_ip] = time.time() + self.UNBLOCK_INTERVAL
 
-    def _unblock_expired_hosts(self):
-        # Iterate through blocked hosts and unblock those that have expired
+    def _unblock_expired_hosts(self, dp):
         current_time = time.time()
         expired_hosts = [host for host, unblock_time in self.blocked_hosts.items() if unblock_time <= current_time]
         for host in expired_hosts:
-            self.unblock_host(host)
+            self.unblock_host(host, dp)
 
-    def unblock_host(self, host_ip):
+    def unblock_host(self, host_ip, dp):
         # Unblock traffic from the host by removing the flow entry
+        ofproto = dp.ofproto
+        parser = dp.ofproto_parser
 
         # Create a flow entry to match packets from the host
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=host_ip)
 
-        # Delete the flow entry by sending a FlowMod with command OFPFC_DELETE
+        # Delete the flow entry by sending a FlowMod
+        mod = parser.OFPFlowMod(
+            datapath=dp,
+            command=ofproto.OFPFC_DELETE,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            match=match
+        )
+        dp.send_msg(mod)
 
-        #Reset the packet count too somewhere
         # Remove the host from the blocked list
         if host_ip in self.blocked_hosts:
             del self.blocked_hosts[host_ip]
 
+        # Reset the packet count
+        count_name = self.all_host_packet_counts[host_ip]
+        setattr(self, count_name, 0)
 
+        #Announce host unblocked
+        self.logger.info("Host {} unblocked".format(host_ip))
 
 
 
