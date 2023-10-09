@@ -23,9 +23,10 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.h3_total_packets_out = 0
         self.packetCounts = {'10.0.1.1': 0, '10.0.2.1': 0, '10.0.3.1': 0}
         self.MAX_COUNT = 5
-        self.UNBLOCK_INTERVAL = 6
+        self.UNBLOCK_INTERVAL = 3
         self.blocked_hosts = {}
-        self.all_host_packet_counts = { '10.0.1.1' : 'h1_total_packets_out', '10.0.2.1': 'h2_total_packets_out', '10.0.3.1': 'h3_total_packets_out'}
+        self.all_host_packet_counts = {'10.0.1.1': 'h1_total_packets_out', '10.0.2.1': 'h2_total_packets_out',
+                                       '10.0.3.1': 'h3_total_packets_out'}
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -147,8 +148,8 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
     def _monitor(self):
         while True:
             for dp in self.datapaths.values():
-                self._request_stats(dp)
                 self._block_handler(dp)
+                self._request_stats(dp)
             hub.sleep(1)
 
     def _block_handler(self, dp):
@@ -182,7 +183,6 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.logger.info("Blocking traffic from host {}".format(host_ip))
         dp.send_msg(msg)
 
-
         # Store the unblock timestamp
         self.blocked_hosts[host_ip] = time.time() + self.UNBLOCK_INTERVAL
 
@@ -214,17 +214,51 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         if host_ip in self.blocked_hosts:
             del self.blocked_hosts[host_ip]
 
-        # Reset the packet count
-        count_name = self.all_host_packet_counts[host_ip]
-        setattr(self, count_name, 0)
+        # Remove & Re-Add the Flow
+        self.remove_readd_ipv4_flow(host_ip, dp)
 
-        #Announce host unblocked
+        # Reset the packet count
+        count_name = self.all_host_packet_counts.get(host_ip)
+        if count_name:
+            setattr(self, count_name, 0)
+
+        # Announce host unblocked
         self.logger.info("Host {} unblocked".format(host_ip))
 
+    def remove_readd_ipv4_flow(self, host_ip, dp):
+        ofproto = dp.ofproto
+        parser = dp.ofproto_parser
 
+        # Remove both incoming and outgoing flows associated with the host
+        ipv4_addresses = ['10.0.1.1', '10.0.2.1', '10.0.3.1']
 
+        for src_ip in ipv4_addresses:
+            for dst_ip in ipv4_addresses:
+                if src_ip != dst_ip:
+                    # Remove both incoming and outgoing flows
+                    match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src_ip, ipv4_dst=dst_ip)
+                    mod = parser.OFPFlowMod(
+                        datapath=dp,
+                        command=ofproto.OFPFC_DELETE,
+                        out_port=ofproto.OFPP_ANY,
+                        out_group=ofproto.OFPG_ANY,
+                        match=match
+                    )
+                    dp.send_msg(mod)
 
-
+                    # Re-add bidirectional flows
+                    match_bidirectional = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src_ip,
+                                                          ipv4_dst=dst_ip)
+                    out_port = ofproto.OFPP_CONTROLLER
+                    actions = [parser.OFPActionOutput(out_port)]
+                    instruction = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+                    msg = parser.OFPFlowMod(
+                        datapath=dp,
+                        priority=1,
+                        match=match_bidirectional,
+                        instructions=instruction
+                    )
+                    dp.send_msg(msg)
 
     def _request_stats(self, datapath):
         self.logger.debug('send stats request: %016x', datapath.id)
@@ -252,7 +286,6 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
             ipv4_src = stat.match.get('ipv4_src', 'N/A')
             packet_count = stat.packet_count
 
-
             if ipv4_src == '10.0.1.1':
                 if ipv4_src in self.blocked_hosts:
                     return
@@ -261,9 +294,8 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
                 if packet_count > initial_h1_packets_out:
                     increase = packet_count - initial_h1_packets_out
                     self.h1_total_packets_out = packet_count  # Update the outgoing count
-                    self.logger.info('Outgoing Packets From h1 increased by %d: %d', increase,
-                                     self.h1_total_packets_out)
-                if packet_count < initial_h1_packets_out:
+                    self.logger.info('Outgoing Packets From h1 increased by %d: %d', increase, self.h1_total_packets_out)
+                if packet_count <= initial_h1_packets_out:
                     prev_packet_count = self.packetCounts[ipv4_src]
                     increase = packet_count - prev_packet_count
                     if increase > 0:
@@ -279,8 +311,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
                 if packet_count > initial_h2_packets_out:
                     increase = packet_count - initial_h2_packets_out
                     self.h2_total_packets_out = packet_count  # Update the outgoing count
-                    self.logger.info('Outgoing Packets From h2 increased by %d: %d', increase,
-                                     self.h2_total_packets_out)
+                    self.logger.info('Outgoing Packets From h2 increased by %d: %d', increase, self.h2_total_packets_out)
                 if packet_count < initial_h2_packets_out:
                     prev_packet_count = self.packetCounts[ipv4_src]
                     increase = packet_count - prev_packet_count
@@ -297,8 +328,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
                 if packet_count > initial_h3_packets_out:
                     increase = packet_count - initial_h3_packets_out
                     self.h3_total_packets_out = packet_count  # Update the outgoing count
-                    self.logger.info('Outgoing Packets From h3 increased by %d: %d', increase,
-                                     self.h3_total_packets_out)
+                    self.logger.info('Outgoing Packets From h3 increased by %d: %d', increase, self.h3_total_packets_out)
                 if packet_count < initial_h3_packets_out:
                     prev_packet_count = self.packetCounts[ipv4_src]
                     increase = packet_count - prev_packet_count
