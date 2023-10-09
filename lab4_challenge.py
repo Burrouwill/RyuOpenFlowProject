@@ -1,3 +1,4 @@
+#Final Sub Check
 import time
 from operator import attrgetter
 
@@ -22,8 +23,8 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.h2_total_packets_out = 0
         self.h3_total_packets_out = 0
         self.packetCounts = {'10.0.1.1': 0, '10.0.2.1': 0, '10.0.3.1': 0}
-        self.MAX_COUNT = 5
-        self.UNBLOCK_INTERVAL = 3
+        self.MAX_COUNT = 10
+        self.UNBLOCK_INTERVAL = 60
         self.blocked_hosts = {}
         self.all_host_packet_counts = {'10.0.1.1': 'h1_total_packets_out', '10.0.2.1': 'h2_total_packets_out',
                                        '10.0.3.1': 'h3_total_packets_out'}
